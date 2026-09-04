@@ -113,11 +113,11 @@ cp .env.example .env
 # Terminal 1 — Backend (FastAPI on port 8000)
 python app.py
 
-# Terminal 2 — Frontend (Vite dev server on port 5173)
+# Terminal 2 — Frontend (Vite dev server on port 3000)
 npm run dev
 ```
 
-- **Dashboard:** [http://localhost:5173](http://localhost:5173)
+- **Dashboard:** [http://localhost:3000](http://localhost:3000)
 - **API Docs (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---

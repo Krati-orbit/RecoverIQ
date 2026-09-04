@@ -883,7 +883,7 @@ function Dashboard({ setView }) {
                   {pipelineState.subText}
                 </span>
                 <span className="text-[10px] text-slate-500 hidden md:inline">
-                  Zero Human Intervention • Sub-50ms SLA
+                  Zero Human Intervention • Sub-2s SLA (1.5s Circuit Breaker)
                 </span>
               </div>
             </div>
