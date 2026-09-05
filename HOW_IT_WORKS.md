@@ -8,6 +8,7 @@
 
 ## 🔑 Key Concept: Nothing Is Pre-Saved
 
+
 The data you see on the dashboard is **NOT hardcoded or pre-saved**. Here's where everything comes from:
 
 | What you see | Where it comes from |

@@ -43,6 +43,23 @@ def on_startup():
     init_db()
 
 
+@app.get("/")
+def root():
+    """Root health check endpoint."""
+    return {
+        "status": "online",
+        "service": "RecoverIQ Revenue Recovery Engine",
+        "version": "1.0.0",
+        "docs": "http://127.0.0.1:8000/docs",
+        "endpoints": {
+            "stats": "/api/stats",
+            "webhook": "/webhook/razorpay",
+            "simulate_batch": "/api/simulate-batch",
+            "reset": "/api/reset"
+        }
+    }
+
+
 def _extract_event_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Helper to normalize Razorpay webhook payload structure."""
     event_type = payload.get("event") or payload.get("event_type", "unknown")
@@ -374,6 +391,12 @@ def get_dashboard_stats(session: Session = Depends(get_session)):
         else 0.0
     )
 
+    # Benchmark Baseline Comparison (Naive Merchant Retry vs RecoverIQ AI Recovery)
+    baseline_rate = 18.5
+    baseline_recovered = round(total_at_risk * (baseline_rate / 100.0), 2) if total_at_risk > 0 else 0.0
+    recovered_lift = round(max(0.0, total_recovered - baseline_recovered), 2)
+    uplift_pct = round(max(0.0, recovery_rate - baseline_rate), 2) if total_recovered > 0 else 0.0
+
     # Fetch 15 most recent audit logs
     audit_query = select(AuditLog).order_by(desc(AuditLog.id)).limit(15)
     audit_logs = session.exec(audit_query).all()
@@ -384,6 +407,10 @@ def get_dashboard_stats(session: Session = Depends(get_session)):
             "total_recovered": round(total_recovered, 2),
             "recovery_rate": recovery_rate,
             "total_events": total_events,
+            "baseline_rate": baseline_rate,
+            "baseline_recovered": baseline_recovered,
+            "recovered_lift": recovered_lift,
+            "uplift_pct": uplift_pct,
         },
         "transactions": [
             {
@@ -472,4 +499,6 @@ def reset_database(session: Session = Depends(get_session)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    init_db()
+    print("🚀 RecoverIQ Backend starting on http://127.0.0.1:8000 ...")
+    uvicorn.run(app, host="127.0.0.1", port=8000)

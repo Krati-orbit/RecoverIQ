@@ -56,6 +56,30 @@ def deterministic_fallback(
         }
 
     formatted_amount = f"{amount:,.2f}" if isinstance(amount, (int, float)) else str(amount)
+    if "mandate" in combined_text or "recurring" in combined_text or "subscription" in combined_text:
+        return {
+            "category": "MANDATE_FAILURE",
+            "action": "WHATSAPP_NUDGE",
+            "copy": (
+                f"Hey {customer_name}! Aapka monthly subscription auto-debit (₹{formatted_amount}) fail ho gaya hai. "
+                f"Service active rakhne ke liye 1-click me renew karein: [LINK]"
+            ),
+            "explanation": "Circuit Breaker: Subscription mandate retry cadence triggered.",
+            "is_llm": False,
+        }
+
+    if "cart" in combined_text or "checkout" in combined_text or "abandon" in combined_text:
+        return {
+            "category": "CHECKOUT_DROP_OFF",
+            "action": "WHATSAPP_NUDGE",
+            "copy": (
+                f"Hey {customer_name}! Aapka ₹{formatted_amount} ka checkout incomplete reh gaya. "
+                f"Cart reserved hai — 1-click me order complete karein: [LINK]"
+            ),
+            "explanation": "Circuit Breaker: High-intent checkout abandonment nudge dispatched.",
+            "is_llm": False,
+        }
+
     return {
         "category": "INSUFFICIENT_FUNDS",
         "action": "WHATSAPP_NUDGE",
@@ -78,7 +102,7 @@ def _invoke_gemini_llm(
     system_prompt = (
         "You are RecoverIQ, an autonomous payment recovery intelligence engine for Razorpay merchants.\n"
         "Analyze the payment failure metadata and output a valid JSON object with the exact keys:\n"
-        '- "category": must be one of ["BANK_DOWNTIME", "INSUFFICIENT_FUNDS", "USER_ABANDONMENT", "CARD_BLOCKED"]\n'
+        '- "category": must be one of ["BANK_DOWNTIME", "INSUFFICIENT_FUNDS", "USER_ABANDONMENT", "CARD_BLOCKED", "MANDATE_FAILURE", "CHECKOUT_DROP_OFF"]\n'
         '- "action": must be one of ["SILENT_RETRY", "WHATSAPP_NUDGE", "EMAIL_NUDGE"]\n'
         '- "copy": contextual Hinglish customer communication message containing the exact placeholder "[LINK]". '
         'For SILENT_RETRY action, copy should be empty string "".\n'
@@ -86,6 +110,8 @@ def _invoke_gemini_llm(
         "Guidelines:\n"
         "- BANK_DOWNTIME -> action: SILENT_RETRY, copy: \"\"\n"
         "- INSUFFICIENT_FUNDS / USER_ABANDONMENT -> action: WHATSAPP_NUDGE, friendly Hinglish copy with [LINK]\n"
+        "- MANDATE_FAILURE -> action: WHATSAPP_NUDGE, clear Hinglish subscription renewal copy with [LINK]\n"
+        "- CHECKOUT_DROP_OFF -> action: WHATSAPP_NUDGE, high-intent cart reservation Hinglish copy with [LINK]\n"
         "- CARD_BLOCKED -> action: EMAIL_NUDGE, polite Hinglish copy suggesting alternative payment method with [LINK]\n"
         "Respond ONLY with valid JSON."
     )
