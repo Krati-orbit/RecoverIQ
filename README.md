@@ -50,7 +50,7 @@ In India's digital economy, merchants lose between **15% to 30% of their checkou
 
 **RecoverIQ** is an autonomous revenue recovery engine built natively for Razorpay merchants. It:
 1. **Detects & Ingests** `payment.failed` webhook events in real-time.
-2. **Diagnoses Root Causes** using **Google Gemini 2.5 Flash** wrapped in a **1.5s sub-second circuit breaker**.
+2. **Diagnoses Root Causes** using **Google Gemini 3.6/2.5 Flash** wrapped in a **1.5s sub-second circuit breaker**.
 3. **Executes Bounded Recovery Actions:** Dispatches silent backoffs for banking switch outages, and dynamic Hinglish WhatsApp / Email nudges equipped with **live Razorpay 1-click payment links**.
 4. **Closes the Loop:** Listens for `payment.captured` webhooks, updates the transaction ledger to `RECOVERED`, and proves **measured revenue alpha** with an immutable audit trail.
 
@@ -87,7 +87,7 @@ The hackathon guidelines specify strict evaluation criteria. Here is how Recover
 │  ┌─────────────────────────┐    ┌─────────────────────────┐    ┌────────────────────────────────────┐  │
 │  │  STAGE 1                │    │  STAGE 2                │    │  STAGE 3                           │  │
 │  │  Webhook Ingestion      │───▶│  Idempotency & Guard    │───▶│  Hybrid AI Diagnostic Engine       │  │
-│  │  • Normalize JSON       │    │  • SHA-256 Event Lock   │    │  • Gemini 2.5 Flash Classification │  │
+│  │  • Normalize JSON       │    │  • SHA-256 Event Lock   │    │  • Gemini 3.6/2.5 Flash Classification │  │
 │  │  • Extract Order & PII  │    │  • Max 3 Attempts Cap   │    │  • 1.5s Fast Circuit Breaker       │  │
 │  └─────────────────────────┘    └─────────────────────────┘    └─────────────────┬──────────────────┘  │
 │                                                                                  │                     │
@@ -267,7 +267,7 @@ razorpay-recoveryiq/
 | `GET` | `/api/stats` | Returns aggregated metrics (Total at Risk, Recovered GMV, Recovery %, Baseline, Net Alpha), transaction ledger, and audit logs. | `{ "metrics": { "total_at_risk": 85000, "recovered_lift": 38000 }, ... }` |
 | `POST` | `/api/simulate-batch` | Triggers the 50-transaction benchmark simulation script in the background. | `{ "status": "success", "message": "Batch simulation triggered" }` |
 | `POST` | `/api/reset` | Clears all transaction records, idempotency keys, and audit logs back to a clean zero state. | `{ "status": "success", "message": "Database reset" }` |
-| `POST` | `/api/chat` | AI Merchant Assistant powered by Gemini 2.5 Flash to answer operator queries. | `{ "message": "How does silent retry work?" }` |
+| `POST` | `/api/chat` | AI Merchant Assistant powered by Gemini 3.6/2.5 Flash to answer operator queries. | `{ "message": "How does silent retry work?" }` |
 | `GET` | `/docs` | Interactive Swagger UI API documentation and testing interface. | HTML Swagger UI |
 
 ---
