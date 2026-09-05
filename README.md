@@ -1,22 +1,39 @@
 # RecoverIQ — Autonomous AI Revenue Recovery Engine
-### Built for the **Razorpay Buildathon** | Track: **AI Revenue Recovery**
 
-> **Track Mission:** *"Find revenue that’s slipping away and win it back. Build an agent that detects revenue at risk, determines the right intervention, and executes a bounded recovery workflow: from payment failures and checkout abandonment to overdue receivables."*
+**Razorpay AI Buildathon 2026 | Track 03 — AI Revenue Recovery**  
+> **Track Mission:** *"Find revenue that’s slipping away and win it back. Build an agent that detects revenue at risk, determines the right intervention, and executes a bounded recovery workflow: from payment failures and checkout abandonment to overdue receivables."* — [razorpay.com/buildathon](https://razorpay.com/buildathon)
 
 ---
 
-## ⚡ 60-Second Quickstart for Judges (Run Locally in 2 Steps)
+### ⚡ Quick Start (For Judges)
 
-Judges can launch and evaluate RecoverIQ in under 60 seconds:
+Judges can launch and evaluate RecoverIQ end-to-end in less than 60 seconds:
 
 ```bash
-# 1. Start the Backend API (Terminal 1)
+# 1. Clone & Environment Setup
+git clone https://github.com/Krati-orbit/RecoverIQ.git && cd RecoverIQ
+python -m venv .venv
+
+# Activate venv:
+source .venv/bin/activate       # macOS / Linux
+# .venv\Scripts\activate        # Windows
+
+pip install -r requirements.txt
+npm install
+cp .env.example .env            # Ensure GEMINI_API_KEY & RAZORPAY keys are configured
+
+# 2. Launch Backend API & Interactive Dashboard
+# Terminal 1 — Start Backend Server (FastAPI + SQLite WAL)
 python app.py
 # ➜ Backend active at http://127.0.0.1:8000 (Swagger docs at http://127.0.0.1:8000/docs)
 
-# 2. Start the Frontend Dashboard (Terminal 2)
+# Terminal 2 — Start Frontend Dashboard (Vite + React)
 npm run dev
 # ➜ Interactive Dashboard active at http://localhost:3000
+
+# 3. (Optional) Run 50-Event Benchmark Stress Simulation
+python simulate_batch.py
+# ➜ Dispatches 50 heterogeneous Razorpay payment failures to benchmark recovery GMV in real-time
 ```
 
 > [!TIP]
