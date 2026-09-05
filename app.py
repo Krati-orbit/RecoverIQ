@@ -88,12 +88,11 @@ def _extract_event_data(payload: Dict[str, Any]) -> Dict[str, Any]:
         event_id = f"evt_{hashlib.sha256(hash_seed.encode('utf-8')).hexdigest()[:16]}"
 
     amount_raw = payment_entity.get("amount", 0.0)
-    # If Razorpay amount in paise, convert to rupees (e.g. 150000 -> 1500.0)
+    # Standard Razorpay webhooks send amount in paise (integer).
+    # Simplified/flat test payloads may send amount in rupees (float).
     amount = float(amount_raw)
-    if amount > 1000 and isinstance(amount_raw, int) and amount_raw % 100 == 0 and "paise" in str(payment_entity.get("notes", {})):
-        amount = amount / 100.0
-    elif amount > 5000 and isinstance(amount_raw, int) and amount_raw % 100 == 0:
-        # Standard Razorpay webhook amount is in paise
+    is_nested_razorpay = bool(payload.get("payload", {}).get("payment", {}).get("entity"))
+    if is_nested_razorpay and isinstance(amount_raw, int) and amount > 100:
         amount = amount / 100.0
 
     customer_notes = payment_entity.get("notes", {})
@@ -253,18 +252,56 @@ async def razorpay_webhook(request: Request, session: Session = Depends(get_sess
 
         from_state = record.state.value if hasattr(record.state, "value") else str(record.state)
 
+        # Terminal State Immutability Guard:
+        # If a customer already paid (RECOVERED) or was already terminated,
+        # reject any further recovery attempts to prevent embarrassing re-nudges.
+        if record.state in (TransactionState.RECOVERED, TransactionState.TERMINATED):
+            audit = AuditLog(
+                order_id=order_id,
+                from_state=from_state,
+                to_state=from_state,
+                action_taken="TERMINAL_STATE_REJECTION",
+                reasoning=f"Pre-flight guard: Order already in terminal state ({from_state}). Recovery loop aborted to prevent duplicate nudges.",
+                is_llm_decision=False,
+                timestamp=datetime.utcnow(),
+            )
+            session.add(audit)
+            session.commit()
+
+            return {
+                "status": "ignored",
+                "reason": f"Order {order_id} is already {from_state} — terminal state immutability enforced",
+                "order_id": order_id,
+                "state": from_state,
+            }
+
         # Anti-Spam Guardrail Check
         if record.retry_count >= 3:
             record.state = TransactionState.TERMINATED
             record.updated_at = datetime.utcnow()
             session.add(record)
 
+            # Amount-based escalation routing on termination
+            amount_val = float(record.amount or 0)
+            if amount_val >= 2000:
+                escalation_action = "CRM_ESCALATION"
+                escalation_reason = (
+                    f"Anti-Spam Guardrail: Max 3 attempts reached. "
+                    f"High-value order (₹{amount_val:,.0f}) escalated to merchant CRM for human concierge follow-up."
+                )
+            else:
+                escalation_action = "INVENTORY_RELEASE"
+                escalation_reason = (
+                    f"Anti-Spam Guardrail: Max 3 attempts reached. "
+                    f"Low-ticket order (₹{amount_val:,.0f}) terminated. Inventory released back to store."
+                )
+
             audit = AuditLog(
                 order_id=order_id,
                 from_state=from_state,
                 to_state=TransactionState.TERMINATED.value,
-                action_taken="GUARDRAIL_TERMINATION",
-                reasoning="Anti-Spam Guardrail: Exceeded maximum recovery attempts (3). Terminating recovery cycle.",
+                action_taken=escalation_action,
+                reasoning=escalation_reason,
                 is_llm_decision=False,
                 timestamp=datetime.utcnow(),
             )
@@ -273,9 +310,10 @@ async def razorpay_webhook(request: Request, session: Session = Depends(get_sess
 
             return {
                 "status": "terminated",
-                "reason": "Anti-Spam Guardrail: Max retry attempts reached (3)",
+                "reason": escalation_reason,
                 "order_id": order_id,
                 "state": TransactionState.TERMINATED.value,
+                "escalation": escalation_action,
             }
 
         # Diagnostic & Planning via Engine
@@ -500,5 +538,5 @@ def reset_database(session: Session = Depends(get_session)):
 if __name__ == "__main__":
     import uvicorn
     init_db()
-    print("🚀 RecoverIQ Backend starting on http://127.0.0.1:8000 ...")
+    print("[RecoverIQ] Backend starting on http://127.0.0.1:8000 ...")
     uvicorn.run(app, host="127.0.0.1", port=8000)

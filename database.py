@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+from sqlalchemy import event
 from sqlmodel import Field, SQLModel, create_engine, Session
 
 
@@ -60,6 +61,16 @@ engine = create_engine(
     echo=False,
     connect_args={"check_same_thread": False},
 )
+
+
+# Enable SQLite Write-Ahead Logging (WAL) for concurrent read/write support.
+# WAL allows readers to proceed without blocking writers, preventing
+# "database is locked" errors during high-concurrency webhook processing.
+@event.listens_for(engine, "connect")
+def _set_sqlite_wal_mode(dbapi_conn, connection_record):
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
 
 
 def init_db():

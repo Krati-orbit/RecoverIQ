@@ -162,13 +162,13 @@ Fintech webhooks cannot block on slow LLM calls. RecoverIQ wraps Gemini 2.5 Flas
 RecoverIQ clusters error codes in real-time. When it detects elevated timeouts from SBI or HDFC switches (`GATEWAY_TIMEOUT_HDFC`, `BAD_REQUEST_GATEWAY_DOWN`), it marks the switch as **OUTAGE** on the dashboard and automatically switches from customer nudges to **`SILENT_RETRY`**. This prevents spamming customers when the fault lies entirely within the banking switch.
 
 ### 3. High-Converting Hinglish Copy Engine
-Data across Indian D2C platforms proves that conversational Hinglish (*"Hey Priya! Aapka ₹1,499 ka payment complete nahi ho paya..."*) converts **3.2x higher on WhatsApp** than robotic English templates. The engine dynamically chooses Hinglish for WhatsApp nudges and structured English for email fallbacks.
+Industry data across Indian D2C platforms shows that conversational vernacular messaging (*"Hey Priya! Aapka ₹1,499 ka payment complete nahi ho paya..."*) converts significantly higher on WhatsApp than formal English templates. The engine dynamically generates Hinglish for WhatsApp nudges and structured English for email fallbacks.
 
 ### 4. Strict Regulatory & Anti-Spam Boundaries
 To comply with TRAI DND regulations and DPDP guidelines:
 * **3-Attempt Cap:** Any order exceeding 3 retries transitions to `TERMINATED`.
-* **CRM Escalation:** Orders above ₹2,000 are routed to merchant support for human concierge calls.
-* **Inventory Release:** Low-ticket retail orders are automatically released back to stock.
+* **CRM Escalation:** High-value orders (≥₹2,000) are logged with `CRM_ESCALATION` action in the audit trail for merchant concierge follow-up.
+* **Inventory Release:** Low-ticket terminated orders are logged with `INVENTORY_RELEASE` action to signal stock release back to the storefront.
 
 ---
 
@@ -200,6 +200,61 @@ To comply with TRAI DND regulations and DPDP guidelines:
 
 ---
 
+## ⚡ What Broke at 2 AM (Engineering War Stories & Real-World Fixes)
+
+Building an autonomous fintech recovery pipeline in a high-concurrency event-driven environment uncovered several non-trivial edge cases. Here is what broke and how we solved it:
+
+### 1. Database Concurrency & Locks Under Load
+* **The Bug:** Our 50-event batch simulation ran FastAPI's concurrent async request handling into SQLite's single-writer limitation, throwing `sqlite3.OperationalError: database is locked` under parallel incoming writes.
+* **The Fix:** We configured SQLAlchemy with `connect_args={"check_same_thread": False}` so worker threads could safely share pooled connections, used FastAPI's dependency-injected session lifecycle (`get_session`) to ensure each webhook request commits and closes immediately (eliminating dangling locks), and enabled SQLite's Write-Ahead Logging (WAL) mode so reads never block concurrent writes.
+
+### 2. Distributed State & Webhook Race Conditions
+* **The Bug:** A customer could complete a payment independently on their checkout tab while a recovery nudge was already queued in the worker pool — risking an embarrassing *"your payment failed, pay here"* message sent to a customer who had already paid!
+* **The Fix:** We implemented **terminal state immutability**: any incoming `payment.captured` event immediately transitions the record to `RECOVERED` and locks it. Every outbound nudge dispatch runs an atomic pre-flight state check that immediately aborts if the order is already `RECOVERED` or has reached the 3-attempt guardrail cap. Furthermore, SHA-256 idempotency event hashing rejects duplicate webhooks at the ingestion gate before they ever reach the state machine.
+
+### 3. Latency Management via In-Memory Circuit Breaker
+* **The Bug:** Live Gemini 2.5 Flash API calls can take 2–4 seconds under network jitter, risking a stall past the payment gateway's 5-second webhook acknowledgment SLA timeout.
+* **The Fix:** We built an in-memory circuit breaker using Python's `ThreadPoolExecutor` with a hard **1.5-second SLA timeout**. If Gemini responds in time, we use its contextual Hinglish classification and personalized copy; if it times out or fails, we fall back to a deterministic heuristic classifier that executes in `< 2 milliseconds`, guaranteeing zero latency stalls, sub-second responses, and 100% uptime for the diagnostic step.
+
+---
+
+## 📂 Project Structure
+
+```
+razorpay-recoveryiq/
+├── app.py                 # FastAPI backend server — webhook ingestion, state machine, REST APIs
+├── engine.py              # Hybrid AI diagnostic engine (Gemini 2.5 Flash + 1.5s Circuit Breaker) + Razorpay SDK
+├── database.py            # SQLModel schema — TransactionRecord, AuditLog, IdempotencyKey (SQLite WAL)
+├── simulate_batch.py      # 50-transaction benchmark stress-test simulator with weighted distributions
+├── requirements.txt       # Python backend dependencies
+├── .env.example           # Environment template (Razorpay keys, Gemini API key)
+├── src/
+│   ├── App.jsx            # React 18 dashboard — live pipeline, ROI Alpha card, interactive drawer & modal
+│   ├── main.jsx           # React DOM root entry point
+│   └── index.css          # Vanilla Tailwind CSS styling & animations
+├── index.html             # Vite single-page application template
+├── package.json           # Node dependencies (React, Vite, Lucide icons, Tailwind)
+├── vite.config.js         # Vite server configuration (port 3000, host: true)
+├── ARCHITECTURE.md        # Deep architectural design and state machine diagrams
+├── HOW_IT_WORKS.md        # End-to-end lifecycle guide & mechanics
+└── README.md              # Official Razorpay Buildathon project documentation
+```
+
+---
+
+## 📡 API Reference
+
+| Method | Endpoint | Description | Sample Payload / Response |
+|---|---|---|---|
+| `POST` | `/webhook/razorpay` | Primary webhook receiver for `payment.failed` and `payment.captured` events. Handles idempotency, AI diagnosis, and state transitions. | `{ "event": "payment.failed", "payload": { ... } }` |
+| `GET` | `/api/stats` | Returns aggregated metrics (Total at Risk, Recovered GMV, Recovery %, Baseline, Net Alpha), transaction ledger, and audit logs. | `{ "metrics": { "total_at_risk": 85000, "recovered_lift": 38000 }, ... }` |
+| `POST` | `/api/simulate-batch` | Triggers the 50-transaction benchmark simulation script in the background. | `{ "status": "success", "message": "Batch simulation triggered" }` |
+| `POST` | `/api/reset` | Clears all transaction records, idempotency keys, and audit logs back to a clean zero state. | `{ "status": "success", "message": "Database reset" }` |
+| `POST` | `/api/chat` | AI Merchant Assistant powered by Gemini 2.5 Flash to answer operator queries. | `{ "message": "How does silent retry work?" }` |
+| `GET` | `/docs` | Interactive Swagger UI API documentation and testing interface. | HTML Swagger UI |
+
+---
+
 ## 🏆 Judge FAQ & Technical Defense
 
 <details>
@@ -220,10 +275,10 @@ Fintech webhooks require sub-2s response times. RecoverIQ wraps all LLM calls in
 <details>
 <summary><strong>3. What happens after the 3-attempt limit is reached?</strong></summary>
 
-To protect merchant brand reputation and comply with TRAI/DPDP regulations against communication spam, RecoverIQ enforces `GUARDRAIL_TERMINATION`:
-* **High-Value Orders (₹2,000+):** Automatically exported to the merchant's CRM for human concierge follow-up.
-* **Low-Ticket Retail:** Order inventory is released back to the store so other customers can purchase.
-* **Passive 72h Window:** The 1-click Razorpay link remains active for 72 hours for async self-recovery if the customer revisits later.
+To protect merchant brand reputation and comply with TRAI/DPDP regulations against communication spam, RecoverIQ enforces amount-based escalation routing:
+* **High-Value Orders (≥₹2,000):** Logged with `CRM_ESCALATION` action in the audit trail, flagging them for merchant support concierge follow-up.
+* **Low-Ticket Retail:** Logged with `INVENTORY_RELEASE` action to signal stock release back to the storefront.
+* **Passive Recovery:** The generated 1-click Razorpay payment link remains active (default Razorpay expiry) for async self-recovery if the customer revisits later.
 </details>
 
 <details>
@@ -236,4 +291,4 @@ In real e-commerce and SaaS, high-frequency customers place multiple orders: a m
 
 ## 📜 License
 
-Built for the **Razorpay Buildathon — AI Revenue Recovery Track**. All rights reserved.
+Built for the **Razorpay Buildathon — AI Revenue Recovery Track**. MIT License.
